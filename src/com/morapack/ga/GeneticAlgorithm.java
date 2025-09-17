@@ -68,4 +68,58 @@ public class GeneticAlgorithm {
         System.out.println("\n=== Mejor solución encontrada ===");
         System.out.println(best);
     }
+    public void runWithPedidos(List<String> vuelosDisponibles, int routeLength, List<Pedido> pedidos) {
+        String outputFile = "plan_asignacion.csv";
+        int totalSolicitados = 0, totalAsignados = 0, totalPendientes = 0;
+        int pedidosConAsignacion = 0;
+
+        try (PrintWriter writer = new PrintWriter(new File(outputFile))) {
+            writer.println("pedido_id,hub_origen,destino,ruta,paquetes_asignados,paquetes_pendientes");
+
+            for (Pedido p : pedidos) {
+                totalSolicitados += p.cantidad;
+
+                // Crear población y optimizar este pedido
+                Population population = new Population(populationSize);
+                population.initialize(vuelosDisponibles, routeLength);
+
+                Chromosome best = population.getBestChromosome();
+                String ruta = String.join(" | ", best.route);
+
+                // Capacidad real según la ruta
+                int capacidadRuta = Integer.MAX_VALUE;
+                for (String vuelo : best.route) {
+                    int cap = DataLoader.capacidadVuelo.getOrDefault(vuelo, 200);
+                    capacidadRuta = Math.min(capacidadRuta, cap);
+                }
+
+// Asignar paquetes según capacidad
+                int asignados = Math.min(p.cantidad, capacidadRuta);
+                int pendientes = p.cantidad - asignados;
+
+
+                if (asignados > 0) pedidosConAsignacion++;
+
+                totalAsignados += asignados;
+                totalPendientes += pendientes;
+
+                // Escribir en CSV
+                writer.printf("%s,%s,%s,\"%s\",%d,%d%n",
+                        p.id, p.hubOrigen, p.destino, ruta, asignados, pendientes);
+            }
+        } catch (IOException e) {
+            System.err.println("Error escribiendo plan_asignacion.csv: " + e.getMessage());
+        }
+
+        // === Resumen en consola ===
+        System.out.println("\n=== Resumen de planificación (GA) ===");
+        System.out.println("Órdenes totales: " + pedidos.size());
+        System.out.println("Órdenes con asignación: " + pedidosConAsignacion);
+        System.out.println("Paquetes solicitados: " + totalSolicitados);
+        System.out.println("Paquetes asignados: " + totalAsignados);
+        System.out.println("Paquetes pendientes: " + totalPendientes);
+        System.out.println("Plan escrito en: " + new File(outputFile).getAbsolutePath());
+    }
+
+
 }
