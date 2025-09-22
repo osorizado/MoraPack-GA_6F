@@ -7,7 +7,7 @@ public class GeneticAlgorithm {
     double mutationRate = 0.2;
     int maxGenerations = 50;
 
-    public void run(List<String> vuelosDisponibles, int routeLength) {
+    /*public void run(List<String> vuelosDisponibles, int routeLength) {
         Population population = new Population(populationSize);
         population.initialize(vuelosDisponibles, routeLength);
 
@@ -67,45 +67,64 @@ public class GeneticAlgorithm {
 
         System.out.println("\n=== Mejor solución encontrada ===");
         System.out.println(best);
-    }
+    }*/
     public void runWithPedidos(List<String> vuelosDisponibles, int routeLength, List<Pedido> pedidos) {
         String outputFile = "plan_asignacion.csv";
         int totalSolicitados = 0, totalAsignados = 0, totalPendientes = 0;
         int pedidosConAsignacion = 0;
 
         try (PrintWriter writer = new PrintWriter(new File(outputFile))) {
-            writer.println("pedido_id,hub_origen,destino,ruta,paquetes_asignados,paquetes_pendientes");
+            writer.println("pedido_id,dia,hub_origen,destino,ruta,paquetes_asignados,paquetes_pendientes");
 
             for (Pedido p : pedidos) {
                 totalSolicitados += p.cantidad;
+                int restantes = p.cantidad;
+                int asignadosTotal = 0;
 
-                // Crear población y optimizar este pedido
-                Population population = new Population(populationSize);
-                population.initialize(vuelosDisponibles, routeLength);
+                // === Filtrar vuelos solo del día del pedido ===
+                List<String> vuelosDelDia = vuelosDisponibles.stream()
+                        .filter(v -> v.endsWith("@D" + String.format("%02d", p.dia)))
+                        .toList();
 
-                Chromosome best = population.getBestChromosome();
-                String ruta = String.join(" | ", best.route);
-
-                // Capacidad real según la ruta
-                int capacidadRuta = Integer.MAX_VALUE;
-                for (String vuelo : best.route) {
-                    int cap = DataLoader.capacidadVuelo.getOrDefault(vuelo, 200);
-                    capacidadRuta = Math.min(capacidadRuta, cap);
+                if (vuelosDelDia.isEmpty()) {
+                    totalPendientes += restantes;
+                    continue;
                 }
 
-// Asignar paquetes según capacidad
-                int asignados = Math.min(p.cantidad, capacidadRuta);
-                int pendientes = p.cantidad - asignados;
+                // === Mientras queden paquetes por asignar ===
+                while (restantes > 0) {
+                    Population population = new Population(populationSize);
+                    population.initialize(vuelosDelDia, routeLength);
 
+                    Chromosome best = population.getBestChromosome();
+                    String ruta = String.join(" | ", best.route);
 
-                if (asignados > 0) pedidosConAsignacion++;
+                    // Capacidad mínima de la ruta
+                    int capacidadRuta = Integer.MAX_VALUE;
+                    for (String vuelo : best.route) {
+                        int cap = DataLoader.capacidadVuelo.getOrDefault(vuelo, 200);
+                        capacidadRuta = Math.min(capacidadRuta, cap);
+                    }
 
-                totalAsignados += asignados;
-                totalPendientes += pendientes;
+                    if (capacidadRuta <= 0) break;
 
-                // Escribir en CSV
-                writer.printf("%s,%s,%s,\"%s\",%d,%d%n",
-                        p.id, p.hubOrigen, p.destino, ruta, asignados, pendientes);
+                    // Asignar fragmento del pedido
+                    int asignados = Math.min(restantes, capacidadRuta);
+                    restantes -= asignados;
+                    asignadosTotal += asignados;
+
+                    if (asignados > 0) {
+                        pedidosConAsignacion++;
+                        writer.printf("%s,%d,%s,%s,\"%s\",%d,%d%n",
+                                p.id, p.dia, p.hubOrigen, p.destino, ruta, asignados, restantes);
+                    }
+
+                    // Seguridad: evitar bucles infinitos
+                    if (asignados == 0) break;
+                }
+
+                totalAsignados += asignadosTotal;
+                totalPendientes += restantes;
             }
         } catch (IOException e) {
             System.err.println("Error escribiendo plan_asignacion.csv: " + e.getMessage());
@@ -120,6 +139,8 @@ public class GeneticAlgorithm {
         System.out.println("Paquetes pendientes: " + totalPendientes);
         System.out.println("Plan escrito en: " + new File(outputFile).getAbsolutePath());
     }
+
+
 
 
 }

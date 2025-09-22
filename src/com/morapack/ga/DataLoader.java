@@ -15,7 +15,7 @@ public class DataLoader {
             String line;
             while ((line = br.readLine()) != null) {
                 String[] parts = line.split(",");
-                if (parts.length < 4) continue; // prevenir errores
+                if (parts.length < 4) continue;
 
                 String origen = parts[0].trim();
                 String destino = parts[1].trim();
@@ -25,29 +25,33 @@ public class DataLoader {
                 try {
                     if (timeStr.contains(":")) {
                         String[] hm = timeStr.split(":");
-                        int horas = Integer.parseInt(hm[0].trim().replaceAll("[^0-9]", ""));   // solo dígitos
-                        int minutos = Integer.parseInt(hm[1].trim().replaceAll("[^0-9]", "")); // solo dígitos
+                        int horas = Integer.parseInt(hm[0].trim().replaceAll("[^0-9]", ""));
+                        int minutos = Integer.parseInt(hm[1].trim().replaceAll("[^0-9]", ""));
                         tiempo = horas + minutos / 60.0;
                     } else {
-                        tiempo = Double.parseDouble(timeStr.replaceAll("[^0-9.]", "")); // también limpiar basura
+                        tiempo = Double.parseDouble(timeStr.replaceAll("[^0-9.]", ""));
                     }
                 } catch (NumberFormatException e) {
                     System.err.println("⚠️ Error parseando tiempo en línea: " + line);
-                    continue; // saltar esta línea y seguir
+                    continue;
                 }
 
                 int capacidad = Integer.parseInt(parts[3].trim().replaceAll("[^0-9]", ""));
+                String vueloBase = origen + "-" + destino;
 
-                String vuelo = origen + "-" + destino;
-
-                Chromosome.tiemposVuelo.put(vuelo, tiempo);
-                Chromosome.capacidadVuelo.put(vuelo, capacidad);
-                vuelosDisponibles.add(vuelo);
+                // Repetir vuelo para cada día del mes
+                for (int d = 1; d <= 30; d++) {
+                    String vuelo = vueloBase + "@D" + String.format("%02d", d);
+                    Chromosome.tiemposVuelo.put(vuelo, tiempo);
+                    Chromosome.capacidadVuelo.put(vuelo, capacidad);
+                    vuelosDisponibles.add(vuelo);
+                }
             }
         } catch (IOException e) {
             System.err.println("Error leyendo vuelos: " + e.getMessage());
         }
     }
+
 
 
 
@@ -57,21 +61,29 @@ public class DataLoader {
             String line;
             Random rand = new Random();
             while ((line = br.readLine()) != null) {
-                String[] parts = line.split(",");
-                if (parts.length < 3) continue;
-                String id = parts[0].trim();
-                String destino = parts[1].trim();
-                int cantidad = Integer.parseInt(parts[2].trim());
+                String[] parts = line.split("-");
+                if (parts.length < 6) continue;
 
-                // Asignar un hub origen aleatorio
+                int dd = Integer.parseInt(parts[0]); // día
+                String destino = parts[3];
+                int cantidad = Integer.parseInt(parts[4]);
+                String idCliente = parts[5];
+
+                String id = dd + "-" + idCliente;
+
+                // Hub origen aleatorio
                 String hubOrigen = hubs[rand.nextInt(hubs.length)];
 
-                pedidos.add(new Pedido(id, destino, cantidad, hubOrigen));
+                Pedido p = new Pedido(id, destino, cantidad, hubOrigen);
+                p.dia = dd; // nuevo campo en Pedido para el día
+                pedidos.add(p);
             }
         } catch (IOException e) {
             System.err.println("Error cargando pedidos: " + e.getMessage());
         }
     }
+
+
 
     // Leer aeropuertos.txt (opcional)
     public static List<String> loadAeropuertos(String file) {

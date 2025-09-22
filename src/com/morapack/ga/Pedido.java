@@ -4,7 +4,8 @@ public class Pedido {
     public String id;
     public String destino;
     public int cantidad;
-    public String hubOrigen; // SPIM, EBCI o UBBB
+    public String hubOrigen;
+    public int dia; // día del mes (1–30)
 
     public Pedido(String id, String destino, int cantidad, String hubOrigen) {
         this.id = id;
