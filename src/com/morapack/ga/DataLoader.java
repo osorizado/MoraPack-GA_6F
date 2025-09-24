@@ -1,101 +1,144 @@
 package com.morapack.ga;
 import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
+
 public class DataLoader {
-    public static List<String> vuelosDisponibles = new ArrayList<>();
-    public static Map<String, Double> tiemposVuelo = new HashMap<>();
-    public static Map<String, Integer> capacidadVuelo = new HashMap<>();
-    // ✅ Ahora
+    public static Map<String, Aeropuerto> aeropuertos = new HashMap<>();
+    public static List<Vuelo> vuelos = new ArrayList<>();
     public static List<Pedido> pedidos = new ArrayList<>();
 
-    static String[] hubs = {"SPIM", "EBCI", "UBBB"};
-    public static void loadVuelos(String path) {
-        try (BufferedReader br = new BufferedReader(new FileReader(path))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                String[] parts = line.split(",");
-                if (parts.length < 4) continue;
+    private static final DateTimeFormatter HHMM = DateTimeFormatter.ofPattern("H:mm");
 
-                String origen = parts[0].trim();
-                String destino = parts[1].trim();
-                String timeStr = parts[2].trim();
+    // ================================
+    // Cargar Aeropuertos
+    // ================================
+    public static void loadAeropuertos(String path) {
+        try {
+            List<String> lines = Files.readAllLines(Paths.get(path));
+            for (String linea : lines) {
+                if (linea == null || linea.isBlank()) continue;
 
-                double tiempo = 0.0;
-                try {
-                    if (timeStr.contains(":")) {
-                        String[] hm = timeStr.split(":");
-                        int horas = Integer.parseInt(hm[0].trim().replaceAll("[^0-9]", ""));
-                        int minutos = Integer.parseInt(hm[1].trim().replaceAll("[^0-9]", ""));
-                        tiempo = horas + minutos / 60.0;
-                    } else {
-                        tiempo = Double.parseDouble(timeStr.replaceAll("[^0-9.]", ""));
-                    }
-                } catch (NumberFormatException e) {
-                    System.err.println("⚠️ Error parseando tiempo en línea: " + line);
-                    continue;
-                }
+                String[] partes = linea.split(",");
+                int id = Integer.parseInt(partes[0].trim());
+                String codigo = partes[1].trim();
+                int capacidad = Integer.parseInt(partes[6].trim());
+                String continente = partes[9].trim();
 
-                int capacidad = Integer.parseInt(parts[3].trim().replaceAll("[^0-9]", ""));
-                String vueloBase = origen + "-" + destino;
-
-                // Repetir vuelo para cada día del mes
-                for (int d = 1; d <= 30; d++) {
-                    String vuelo = vueloBase + "@D" + String.format("%02d", d);
-                    Chromosome.tiemposVuelo.put(vuelo, tiempo);
-                    Chromosome.capacidadVuelo.put(vuelo, capacidad);
-                    vuelosDisponibles.add(vuelo);
-                }
+                Aeropuerto ap = new Aeropuerto(id, codigo, capacidad, continente);
+                aeropuertos.put(codigo, ap);
             }
+            System.out.println("Aeropuertos cargados: " + aeropuertos.size());
         } catch (IOException e) {
-            System.err.println("Error leyendo vuelos: " + e.getMessage());
+            System.err.println("Error cargando aeropuertos: " + e.getMessage());
         }
     }
 
+    // ================================
+    // Cargar Vuelos
+    // ================================
+    public static void loadVuelos(String path) {
+        try {
+            List<String> lines = Files.readAllLines(Paths.get(path));
+            int id = 0;
+            for (String linea : lines) {
+                if (linea.isBlank()) continue;
+                String[] f = linea.split("\\s*,\\s*");
+                if (f.length < 5) continue;
 
+                String origen = f[0].trim();
+                String destino = f[1].trim();
+                if (!aeropuertos.containsKey(origen) || !aeropuertos.containsKey(destino)) continue;
 
+                int salida = hhmmAMinutos(f[2]);
+                int llegada = hhmmAMinutos(f[3]);
+                int capacidad = parseIntSafe(f[4]);
 
-    // Leer pedidos.txt: formato -> origen,destino,cantidad
-    public static void loadPedidos(String file) {
-        try (BufferedReader br = new BufferedReader(new FileReader(file))) {
-            String line;
-            Random rand = new Random();
-            while ((line = br.readLine()) != null) {
-                String[] parts = line.split("-");
-                if (parts.length < 6) continue;
+                // duración ajustada
+                int duracion = llegada - salida;
+                if (duracion < 0) duracion += 24 * 60;
 
-                int dd = Integer.parseInt(parts[0]); // día
-                String destino = parts[3];
-                int cantidad = Integer.parseInt(parts[4]);
-                String idCliente = parts[5];
+                // continente origen vs destino
+                String contOrigen = aeropuertos.get(origen).continente;
+                String contDestino = aeropuertos.get(destino).continente;
+                boolean esContinental = contOrigen.equals(contDestino);
 
-                String id = dd + "-" + idCliente;
+                Vuelo v = new Vuelo(id++, origen, destino, salida, llegada, capacidad, duracion, esContinental);
+                vuelos.add(v);
+            }
+            System.out.println("Vuelos cargados: " + vuelos.size());
+        } catch (IOException e) {
+            System.err.println("Error cargando vuelos: " + e.getMessage());
+        }
+    }
 
-                // Hub origen aleatorio
-                String hubOrigen = hubs[rand.nextInt(hubs.length)];
+    // ================================
+    // Cargar Pedidos
+    // ================================
+    public static void loadPedidos(String path) {
+        try {
+            List<String> lines = Files.readAllLines(Paths.get(path));
+            for (String linea : lines) {
+                if (linea.trim().isEmpty() || linea.startsWith("#")) continue;
 
-                Pedido p = new Pedido(id, destino, cantidad, hubOrigen);
-                p.dia = dd; // nuevo campo en Pedido para el día
+                String[] partes = linea.split("-");
+                if (partes.length != 6) continue;
+
+                int dia = Integer.parseInt(partes[0]);
+                int hora = Integer.parseInt(partes[1]);
+                int minuto = Integer.parseInt(partes[2]);
+                String destino = partes[3].trim();
+                int cantidad = Integer.parseInt(partes[4]);
+                String idCliente = partes[5].trim();
+
+                // Seleccionar hub por región
+                String hub = hubParaDestino(destino);
+
+                Pedido p = new Pedido(idCliente, destino, cantidad, hub, dia, hora, minuto);
                 pedidos.add(p);
             }
+            System.out.println("Pedidos cargados: " + pedidos.size());
         } catch (IOException e) {
             System.err.println("Error cargando pedidos: " + e.getMessage());
         }
     }
 
+    // ================================
+    // Helpers
+    // ================================
+    private static int hhmmAMinutos(String hhmm) {
+        LocalTime t = LocalTime.parse(hhmm.trim(), HHMM);
+        return t.getHour() * 60 + t.getMinute();
+    }
 
-
-    // Leer aeropuertos.txt (opcional)
-    public static List<String> loadAeropuertos(String file) {
-        List<String> aeropuertos = new ArrayList<>();
-        try (BufferedReader br = new BufferedReader(new FileReader(file))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                aeropuertos.add(line.trim());
-            }
-        } catch (IOException e) {
-            System.err.println("Error cargando aeropuertos: " + e.getMessage());
+    private static int parseIntSafe(String s) {
+        try {
+            return Integer.parseInt(s.replaceAll("[^0-9]", ""));
+        } catch (Exception e) {
+            return 0;
         }
-        return aeropuertos;
+    }
+
+    // Definición fija de hubs (como en ACO)
+    private static final Map<String, String> HUBS = Map.of(
+            "SPIM", "AM",  // Lima
+            "EBCI", "EU",  // Bruselas
+            "UBBB", "AS"   // Bakú
+    );
+
+    private static String hubParaDestino(String destino) {
+        Aeropuerto ap = aeropuertos.get(destino);
+        if (ap == null) return "EBCI"; // default
+
+        switch (ap.continente) {
+            case "AM": return "SPIM";
+            case "EU": return "EBCI";
+            case "AS": return "UBBB";
+            default:   return "EBCI";
+        }
     }
 }

@@ -3,63 +3,79 @@ package com.morapack.ga;
 import java.util.*;
 
 public class Chromosome {
-    List<String> route;   // Secuencia de vuelos
+    List<Vuelo> route;
     double fitness;
 
-    static Map<String, Double> tiemposVuelo = DataLoader.tiemposVuelo;
-    static Map<String, Integer> capacidadVuelo = DataLoader.capacidadVuelo;
-    static int capacidadAlmacen = 800;
-    static Random rand = new Random();
-
-
-
-    public Chromosome(List<String> route) {
+    public Chromosome(List<Vuelo> route) {
         this.route = new ArrayList<>(route);
     }
 
-    public void evaluate() {
-        double totalTiempo = 0.0;
-        double penalizacionTiempo = 0.0, penalizacionAlmacen = 0.0, penalizacionVuelo = 0.0;
+    // Evaluación con todas las reglas que ya cumple ACO
+    public void evaluate(Pedido pedido, Map<String, Aeropuerto> aeropuertos, Map<Integer, Integer> capRest) {
+        double horasTotales = 0.0;
+        double penalizacion = 0.0;
 
-        int cargaTotal = 0;
+        if (route.isEmpty()) {
+            this.fitness = 0;
+            return;
+        }
 
-        for (int i = 0; i < route.size(); i++) {
-            String vuelo = route.get(i);
-            double t = tiemposVuelo.getOrDefault(vuelo, 1.0);
-            totalTiempo += t;
+        Aeropuerto destinoAp = aeropuertos.get(pedido.destino);
+        if (destinoAp == null) {
+            this.fitness = 0;
+            return;
+        }
 
-            if (i > 0) totalTiempo += 0.1; // conexión
+        String actual = pedido.hubOrigen;
+        Set<String> visitados = new HashSet<>();
+        visitados.add(actual);
 
-            int cargaVuelo = 100 + rand.nextInt(401);
-            cargaTotal += cargaVuelo;
+        int horaActual = pedido.hora * 60 + pedido.minuto; // minuto del día
+        int diaActual = pedido.dia;
 
-            int capMax = capacidadVuelo.getOrDefault(vuelo, 200);
-            if (cargaVuelo > capMax) {
-                double exceso = (cargaVuelo - capMax) / (double) capMax;
-                penalizacionVuelo += exceso; // ya no *20
+        for (Vuelo v : route) {
+            // verificar conectividad
+            if (!v.origen.equals(actual)) {
+                penalizacion += 10.0; // salto inválido
             }
+            actual = v.destino;
+
+            // verificar conexión mínima de 1h
+            if (v.salidaMin < horaActual + 60) {
+                penalizacion += 5.0;
+            }
+
+            // actualizar tiempo total
+            horasTotales += v.horasDuracion;
+            horaActual = v.llegadaMin;
+
+            // capacidad del vuelo
+            int cap = capRest.getOrDefault(v.id, v.capacidad);
+            if (cap <= 0) penalizacion += 10.0;
+
+            // evitar ciclos
+            if (visitados.contains(actual)) penalizacion += 2.0;
+            visitados.add(actual);
         }
 
-        // SLA: en vez de 3 o 2, pon límite relativo al # vuelos
-        double limite = 2.0 + route.size() * 0.5;
-        if (totalTiempo > limite) {
-            penalizacionTiempo = (totalTiempo - limite);
-        }
+        // +2h por aduanas en destino
+        horasTotales += 2.0;
 
-        if (cargaTotal > capacidadAlmacen) {
-            double exceso = (cargaTotal - capacidadAlmacen) / (double) capacidadAlmacen;
-            penalizacionAlmacen = exceso;
-        }
+        // SLA dinámico
+        String hubRegion = aeropuertos.get(pedido.hubOrigen).continente;
+        String destRegion = destinoAp.continente;
+        double sla = hubRegion.equals(destRegion) ? 48.0 : 72.0;
 
-        double penalizacionTotal = penalizacionTiempo + penalizacionAlmacen + penalizacionVuelo;
-        double score = 100.0 / (1.0 + penalizacionTotal / 10.0);
-        this.fitness = Math.max(0, score);
+        if (horasTotales > sla) penalizacion += (horasTotales - sla);
 
+        // penalización almacén destino lleno
+        if (destinoAp.capacidad <= 0) penalizacion += 10.0;
+
+        this.fitness = Math.max(0, 100.0 / (1.0 + penalizacion));
     }
-
 
     @Override
     public String toString() {
-        return "Route: " + route + " | Fitness: " + String.format("%.2f", fitness);
+        return "Ruta=" + route + " | Fitness=" + String.format("%.2f", fitness);
     }
 }
