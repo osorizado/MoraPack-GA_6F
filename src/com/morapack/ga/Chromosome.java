@@ -58,8 +58,7 @@ public class Chromosome {
             visitados.add(actual);
         }
 
-        // +2h por aduanas en destino
-        horasTotales += 2.0;
+
 
         // SLA dinámico
         String hubRegion = aeropuertos.get(pedido.hubOrigen).continente;

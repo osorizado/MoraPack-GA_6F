@@ -41,10 +41,26 @@ public class GeneticAlgorithm {
                     restantes -= asignados;
                     asignadosTotal += asignados;
 
-                    // actualizar capacidades
+                    // actualizar capacidades de vuelos
                     for (Vuelo v : best.route) {
                         capRest.put(v.id, capRest.get(v.id) - asignados);
                     }
+
+// ✅ nuevo: ocupar almacén destino por 2h
+                    Aeropuerto apDest = aeropuertos.get(p.destino);
+                    if (apDest != null) {
+                        // calcular minuto de llegada absoluta
+                        int minutoLlegada = p.dia * 24 * 60 + p.hora * 60 + p.minuto;
+                        for (Vuelo v : best.route) {
+                            minutoLlegada += (int)(v.horasDuracion * 60);
+                        }
+                        // ocupar 2h = 120 minutos
+                        for (int m = minutoLlegada; m < minutoLlegada + 120; m++) {
+                            apDest.ocupacionPorMinuto.put(m,
+                                    apDest.ocupacionPorMinuto.getOrDefault(m, 0) + asignados);
+                        }
+                    }
+
 
                     writer.printf("%s,%d,%s,%s,\"%s\",%d,%d,%.2f%n",
                             p.id, p.dia, p.hubOrigen, p.destino,
